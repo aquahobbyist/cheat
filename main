@@ -1,0 +1,32 @@
+#!/bin/bash
+
+ESC_R="$(printf '\x1b[0m')"
+ESC_CC="$(printf '\x1b[38;5;246m')"
+ESC_TL="$(printf "\x1b[48;5;8m")"
+
+if [ "${1#-}" != "$1" ]; then
+	case $1 in
+		-s) SEARCH="on";;
+		-t) ESC_R=""; ESC_CC=""; ESC_TL="";;
+	esac
+	PROMPT="$2"
+else
+	PROMPT="$1"
+fi
+
+
+read -rd '' colors << EOF
+{
+	if(\$1 ~ /^#/) { gsub(/^#/,"$ESC_CC#"); gsub(/\$/,"$ESC_R"); }
+	print \$0
+}
+EOF
+
+for page in $(find ~/.local/cheat/pages/ -type f | grep "/$PROMPT$"); do
+	printf "$ESC_TL%s:$ESC_R\n" "$(basename $(dirname $page))/$(basename $page)"
+	awk "$colors" "$page"
+done
+
+if [ $(stat -c "%Y" ~/.local/cheat/pages ) -lt $(date -d '1 week ago' "+%s") ]; then
+	printf "It has been over 1 week since you Updated your pages, run update.sh to update them\n"
+fi
