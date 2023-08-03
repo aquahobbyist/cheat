@@ -1,4 +1,0 @@
-#!/usr/bin/sh
- awk '{gsub(/\{\{|\}\}/,""); gsub(/^[->]/,"#");\
-	 gsub(/^`|`$/,""); if(expcmd==1){if($0 !~ /^\s*$/)\
-	print $0;} else print $0; if($1 ~ /#/)expcmd=1;else expcmd=0;}' 
