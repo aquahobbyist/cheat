@@ -1,14 +1,12 @@
 #!/bin/sh
 
-# TODO:
-# * PAGER SUPPORT
-# * SMART PAGER SUPPORT (less -F)
-# BETTER ARGUMENT PROCESSING
-# POSIX SHELL COMPATIBLILITY + TITLE COLORIZATION
+# TODO: Better Argument Processing
 
 ESC_R="\x1b[0m"
 ESC_CC="\x1b[38;5;246m"
-ESC_TL="\x1b[48;5;8m"
+ESC_TL="\e[48;5;8m"
+# printf breaks on \x in variables
+ESC_R_PF="\e[0m"
 
 PGER="less -RF"
 
@@ -17,9 +15,9 @@ TMPDIR="$CHEAT_PAGES_DIR/tmpdir"
 PAGEDIR="$CHEAT_PAGES_DIR/pages"
 
 update () {
-	#Initilize
-	ping -c1 8.8.8.8 > /dev/null || ( echo "No Internet Connection"; exit 127 ) 
 	mkdir -p "$TMPDIR" "$PAGEDIR"
+	[ -d $PAGEDIR ] && COUNT="$(find "$PAGEDIR" -type f | wc -l)"
+	# Update Timestamps for last update checker
 	touch "$PAGEDIR"
 	
 	#Clone Repos And Extract Pages
@@ -28,31 +26,46 @@ update () {
 	git clone -q https://www.github.com/tldr-pages/tldr "$TMPDIR/tldr"
 	echo "TLDR: Extracing Pages"
 	mkdir -p "$PAGEDIR/tldr/" "$TMPDIR/tldr-cv"
-	mv $TMPDIR/tldr/pages/common/* "$TMPDIR/tldr-cv"
-	mv $TMPDIR/tldr/pages/linux/* "$TMPDIR/tldr-cv"
+	mv "$TMPDIR"/tldr/pages/common/* "$TMPDIR/tldr-cv"
+	mv "$TMPDIR"/tldr/pages/linux/* "$TMPDIR/tldr-cv"
 	echo "TLDR: Converting Pages"
 	for tldr_page in $(ls "$TMPDIR/tldr-cv" | sed 's/.md$//'); do
-		awk '{gsub(/\{\{|\}\}/,""); gsub(/^[->]/,"#");\
-		 gsub(/^`|`$/,""); if(expcmd==1){if($0 !~ /^\s*$/)\
-		print $0;} else print $0; if($1 ~ /#/)expcmd=1;else expcmd=0;}' $TMPDIR/tldr-cv/$tldr_page.md > $PAGEDIR/tldr/$tldr_page
+		awk '{\
+			gsub(/\{\{|\}\}/, "");\
+			gsub(/^[->]/, "#");\
+			gsub(/^`|`$/, "");\
+			\
+			if(expcmd==1){\
+				if($0 !~ /^\s*$/)\
+					print $0;\
+				} else print $0;\
+			\
+			if($1 ~ /#/) expcmd=1;\
+			else expcmd=0;\
+			}' "$TMPDIR/tldr-cv/$tldr_page.md" > "$PAGEDIR/tldr/$tldr_page"
 	done
+
 	#cheat
 	echo "Cloning: cheat"
-	git clone -q https://github.com/cheat/cheatsheets $TMPDIR/cheat
+	git clone -q https://github.com/cheat/cheatsheets "$TMPDIR/cheat"
 	echo "cheat: Extracting Pages"
-	rm -rf $TMPDIR/cheat/.git* $TMPDIR/cheat/vim-plugins
-	mkdir -p $PAGEDIR/cheat
-	mv $TMPDIR/cheat/* $PAGEDIR/cheat
+	rm -rf "$TMPDIR"/cheat/.git* "$TMPDIR/cheat/vim-plugins"
+	mkdir -p "$PAGEDIR/cheat"
+	mv "$TMPDIR"/cheat/* "$PAGEDIR/cheat"
+
 	#cheat_sheets
 	echo "Cloning: cheat.sheets"
-	git clone -q https://github.com/chubin/cheat.sheets $TMPDIR/cheat_pages
+	git clone -q https://github.com/chubin/cheat.sheets "$TMPDIR/cheat_pages"
 	echo "cheat.sheets: Extracting Pages"
 	mkdir -p "$PAGEDIR/cheat_sheets"
-	mv $(find "$TMPDIR/cheat_pages/sheets/" -maxdepth 1 -type f) $PAGEDIR/cheat_sheets
+	mv $(find "$TMPDIR/cheat_pages/sheets/" -maxdepth 1 -type f) "$PAGEDIR/cheat_sheets"
+
 	#Cleanup, Nuke `tmpdir/`
 	echo "Cleaning Up"
 	rm -rf "$TMPDIR"
 	echo "Update Complete"
+
+	printf "%s -> %s\n" "$COUNT" "$(find "$PAGEDIR" -type f | wc -l)"
 }
 
 print_help () {
@@ -63,7 +76,7 @@ print_help () {
 #Argument handling could be better
 if [ "${1#-}" != "$1" ]; then
 	case $1 in
-		-t) ESC_R=""; ESC_CC=""; ESC_TL="";;
+		-t) ESC_R=""; ESC_CC=""; ESC_TL=""; ESC_R_PF="";;
 		-u) update; exit ;;
 		-c) PGER="cat" ;;
 		-*) print_help; exit ;;
@@ -77,22 +90,27 @@ fi
 
 BUFFER="$(mktemp)"
 
-pagecount=0
+unset PGC
 for page in $(find "$PAGEDIR" -type f | grep "/$PROMPT$"); do
-	printf "%s:\n" "$(basename $(dirname "$page"))/$(basename "$page")" >> "$BUFFER"
-	awk "{if(\$1 ~ /^#/) { gsub(/^#/,\"$ESC_CC#\"); gsub(/\$/,\"$ESC_R\")}; print \$0}" "$page" >> "$BUFFER"
-	pagecount=$((pagecount+1))
+	printf "$ESC_TL%s:$ESC_R_PF\n"\
+		"$(basename "$(dirname "$page")")/$(basename "$page")" >> "$BUFFER"
+	awk "{\
+		if(\$1 ~ /^#/) {\
+			gsub(/^#/, \"$ESC_CC#\")\
+			gsub(/\$/, \"$ESC_R\")\
+		};\
+		print \$0}" "$page" >> "$BUFFER"
+	PGC="set"
 done
 
-if [ $pagecount -eq 0 ]; then
-	echo "No pages found matching title given"
-	echo "Maybe you were looking for:"
-	find $PAGEDIR -type f | grep -o "[^/]*/[^/]*$" | grep "$PROMPT"
+if [ -z "$PGC" ]; then
+	echo "No pages found matching title given\nMaybe you were looking for:"
+	find "$PAGEDIR" -type f | grep -o "[^/]*/$PROMPT.*"
 fi
 
 $PGER "$BUFFER"
 rm -f "$BUFFER"
 
-if [ "$(stat -c '%Y' "$PAGEDIR" )" -lt "$(date -d '1 week ago' '+%s')" ]; then
-	printf "It has been over 1 week since you updated your pages, run '%s -u' to update them\n" "$0"
-fi
+[ "$(stat -c '%Y' "$PAGEDIR" )" -lt "$(date -d '1 week ago' '+%s')" ] && \
+	printf "It has been over 1 week since you updated your pages,\
+		run '%s -u' to update them\n" "$0"
