@@ -4,32 +4,30 @@
 
 ESC_R="\x1b[0m"
 ESC_CC="\x1b[38;5;246m"
-ESC_TL="\e[48;5;8m"
-# printf breaks on \x in variables
-ESC_R_PF="\e[0m"
+ESC_TL="\x1b[48;5;8m"
 
 PGER="less -RF"
 
 CHEAT_PAGES_DIR="$HOME/.local/cheat"
 TMPDIR="$CHEAT_PAGES_DIR/tmpdir"
-PAGEDIR="$CHEAT_PAGES_DIR/pages"
+PAGEFILE="$CHEAT_PAGES_DIR/page"
 
 update () {
-	mkdir -p "$TMPDIR" "$PAGEDIR"
-	[ -d $PAGEDIR ] && COUNT="$(find "$PAGEDIR" -type f | wc -l)"
-	# Update Timestamps for last update checker
-	touch "$PAGEDIR"
+	mkdir -p "$TMPDIR"
+	[ -f  "$PAGEFILE" ] && COUNT="$(grep '^\[T\]' "$PAGEFILE" | wc -l)"
+	echo > "$PAGEFILE"
 	
 	#Clone Repos And Extract Pages
 	#tldr
 	echo "Cloning: TLDR"
 	git clone -q https://www.github.com/tldr-pages/tldr "$TMPDIR/tldr"
 	echo "TLDR: Extracing Pages"
-	mkdir -p "$PAGEDIR/tldr/" "$TMPDIR/tldr-cv"
+	mkdir -p "$TMPDIR/tldr-cv"
 	mv "$TMPDIR"/tldr/pages/common/* "$TMPDIR/tldr-cv"
 	mv "$TMPDIR"/tldr/pages/linux/* "$TMPDIR/tldr-cv"
 	echo "TLDR: Converting Pages"
 	for tldr_page in $(ls "$TMPDIR/tldr-cv" | sed 's/.md$//'); do
+		printf "[T]%s:\n" "tldr/$tldr_page" >> "$PAGEFILE"
 		awk '{\
 			gsub(/\{\{|\}\}/, "");\
 			gsub(/^[->]/, "#");\
@@ -42,7 +40,7 @@ update () {
 			\
 			if($1 ~ /#/) expcmd=1;\
 			else expcmd=0;\
-			}' "$TMPDIR/tldr-cv/$tldr_page.md" > "$PAGEDIR/tldr/$tldr_page"
+			}' "$TMPDIR/tldr-cv/$tldr_page.md" >> "$PAGEFILE"
 	done
 
 	#cheat
@@ -50,67 +48,59 @@ update () {
 	git clone -q https://github.com/cheat/cheatsheets "$TMPDIR/cheat"
 	echo "cheat: Extracting Pages"
 	rm -rf "$TMPDIR"/cheat/.git* "$TMPDIR/cheat/vim-plugins"
-	mkdir -p "$PAGEDIR/cheat"
-	mv "$TMPDIR"/cheat/* "$PAGEDIR/cheat"
+	for i in $(find "$TMPDIR/cheat" -maxdepth 1 -type f); do
+		printf "[T]%s:\n" "cheat/$(basename $i)" >> "$PAGEFILE"
+		cat "$i" >> "$PAGEFILE"
+	done
 
 	#cheat_sheets
 	echo "Cloning: cheat.sheets"
 	git clone -q https://github.com/chubin/cheat.sheets "$TMPDIR/cheat_pages"
 	echo "cheat.sheets: Extracting Pages"
-	mkdir -p "$PAGEDIR/cheat_sheets"
-	mv $(find "$TMPDIR/cheat_pages/sheets/" -maxdepth 1 -type f) "$PAGEDIR/cheat_sheets"
+	for i in $(find "$TMPDIR/cheat_pages/sheets/" -maxdepth 1 -type f); do
+		printf "[T]%s:\n" "cheat.sheets/$(basename $i)" >> "$PAGEFILE"
+		cat "$i" >> "$PAGEFILE"
+	done
 
 	#Cleanup, Nuke `tmpdir/`
 	echo "Cleaning Up"
 	rm -rf "$TMPDIR"
 	echo "Update Complete"
-
-	printf "%s -> %s\n" "$COUNT" "$(find "$PAGEDIR" -type f | wc -l)"
+	printf "%s -> %s\n" "$COUNT" "$(grep '^\[T\]' "$PAGEFILE" | wc -l)"
 }
 
-print_help () {
-	echo "$0, a tool used for printing useful info about commands"
-	echo "Usage: $0 [-htuc] COMMAND"
-}
 
 #Argument handling could be better
 if [ "${1#-}" != "$1" ]; then
 	case $1 in
-		-t) ESC_R=""; ESC_CC=""; ESC_TL=""; ESC_R_PF="";;
+		-t) ESC_R=""; ESC_CC=""; ESC_TL="";;
 		-u) update; exit ;;
 		-c) PGER="cat" ;;
-		-*) print_help; exit ;;
+		-*) echo "cheat, a tool used for printing useful info about commands\n
+Usage: cheat [-htuc] COMMAND"; exit ;;
 	esac
 	PROMPT="$2"
 else
 	PROMPT="$1"
 fi
-
 [ -z "$PROMPT" ] && echo "$0: needs arguments" && exit
 
-BUFFER="$(mktemp)"
+awk "
+	\$1 ~ /^\[T\]/ {\
+		if(\$0 ~ /$PROMPT:$/) j = 1;\
+		else j = 0;\
+	}\
+	j != 0 {\
+	if(\$0 ~ /^\[T\]/) {\
+		gsub(/^\[T\]/, \"$ESC_TL\");
+		gsub(/$/, \"$ESC_R\");
+	}\
+	if(\$1 ~ /^#/) {\
+		gsub(/^#/, \"$ESC_CC#\")\
+		gsub(/$/, \"$ESC_R\")\
+	};\
+	print \$0\
+	}" "$PAGEFILE" | $PGER
 
-unset PGC
-for page in $(find "$PAGEDIR" -type f | grep "/$PROMPT$"); do
-	printf "$ESC_TL%s:$ESC_R_PF\n"\
-		"$(basename "$(dirname "$page")")/$(basename "$page")" >> "$BUFFER"
-	awk "{\
-		if(\$1 ~ /^#/) {\
-			gsub(/^#/, \"$ESC_CC#\")\
-			gsub(/\$/, \"$ESC_R\")\
-		};\
-		print \$0}" "$page" >> "$BUFFER"
-	PGC="set"
-done
-
-if [ -z "$PGC" ]; then
-	echo "No pages found matching title given\nMaybe you were looking for:"
-	find "$PAGEDIR" -type f | grep -o "[^/]*/$PROMPT.*"
-fi
-
-$PGER "$BUFFER"
-rm -f "$BUFFER"
-
-[ "$(stat -c '%Y' "$PAGEDIR" )" -lt "$(date -d '1 week ago' '+%s')" ] && \
-	printf "It has been over 1 week since you updated your pages,\
-		run '%s -u' to update them\n" "$0"
+[ "$(stat -c '%Y' "$PAGEFILE" )" -lt "$(date -d '1 week ago' '+%s')" ] && \
+	printf "It has been over 1 week since you updated your pages, \nrun '%s -u' to update them\n" "$0"
