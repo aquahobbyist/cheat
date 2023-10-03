@@ -33,9 +33,9 @@ git clone https://www.github.com/oliverkwebb/cheat`
 ```
 
 ## Usage
-To use cheat, just invoke `cheat` with a certain command as a argument for
+To use cheat, just invoke `cheat` with a certain command as a argument. For
 example, `cheat ls` will show various use cases of the `ls` command.  You can
-specify regexps to search with as well (Example: cheat '.\*' to display all
+specify regexps to search with as well (Example: `cheat .\*` to display all
 pages) There are flags which can be passed to the command to configure how
 info is outputted, The default behaviour is to output colorized info into
 `less -RF`.  If `-c` is given before the command name (`cheat -c foobar`)
@@ -43,34 +43,28 @@ It will put text through the `cat` command. If `-t` is given, all ANSI
 Escape Sequence Colorization will be removed. The way the set of pages cheat
 references is updated is by passing the `-u` flag to the command.
 
-## File Format, Configuration, And Hacking
-`cheat` gets info about commands from a single file (`$HOME/.local/cheat/page`
-by Default). This provides benefits from storing each page in it's own file,
-Mainly reducing file overhead (59MB on disk -> 2.4MB).
+## File Format
+`cheat` gets info about commands from a single file (From now on refereed
+to as the pagefile).  Which is set to `$HOME/.local/cheat/page` by Default.
+This provides benefits from storing each page in it's own file, Mainly
+reducing file overhead (59MB on disk -> 2.4MB).
 
-The file which contains the set of pages cheat pulls info from 
-(From now on refereed to as the pagefile). Dives itself into pages
-Each page usually represents one command, Although there may be multiple
-pages on a single command. The pagefile is separated by the titles
-of each page, Titles are specified via a '[T]' at the beginning of the line,
-followed by the database it comes from, a slash, then the name of the page.
+The pagefile Dives itself into pages. Each page usually represents one command,
+Although there may be multiple pages on a single command. The pagefile 
+pages are separated by the titles of each page, Titles are specified via a
+'[T]' at the beginning of the line, followed by any amount of text, 
+The name of the page, and a semicolon at the end of the title.
 
-Text of the page is shown as either a comment, usually explaining what a
-command does above a use case or a brief explanation of a command at the top
-of the file. Or a command which requires no special formatting, and is usually
-meant to be a 
+A line may be marked as a comment, And displayed as grey in colorized text
+by putting '#' at the start of the line.
 
-An example below is how a cheat page for the command `cheat` *may* be
-implemented.  Although the below page is not installed by default.
-```
-[T]foobar/cheat:
-# cheat, show useful info about a command
+## Configuration
+cheat is configured by editing of it's source code. Colorization of pages is
+specified by `ESC_` ANSI Escape sequence variables at the top of the source
+code, followed by the pager and it's flags. And then the directories and
+files cheat uses. If you wish to add your own set of pages to the pagefile,
+It is recommend that you put your own section that downloads them and puts them
+into the pagefile in the `update` function. Starting by getting the pages, and 
+copying them to directory in `$TMPDIR`. Then catting them into the pagefile. 
+`$PAGEFILE`
 
-# Show info about the ls command
-cheat ls
-# Show plain text info about the stat command
-cheat -t stat
-# Update cheat pages
-cheat -u
-```
-### Configuration
