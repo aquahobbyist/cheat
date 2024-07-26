@@ -6,7 +6,7 @@ ESC_TL="\x1b[48;5;8m"
 
 PGER="less -RF"
 
-CHEAT_PAGES_DIR="$HOME/.local/cheat"
+CHEAT_PAGES_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/cheat"
 TMPDIR="$CHEAT_PAGES_DIR/tmpdir"
 PAGEFILE="$CHEAT_PAGES_DIR/page"
 
@@ -27,19 +27,7 @@ update () {
 	echo > "$PAGEFILE"
 	for tldr_page in $(find "$TMPDIR/tldr-cv" ! -name 'tldr-cv' -printf '%f\n' | sed 's/.md$//'); do
 		printf "[T]%s:\n" "tldr/$tldr_page" >> "$PAGEFILE"
-		awk '{\
-			gsub(/\{\{|\}\}/, "");\
-			gsub(/^[->]/, "#");\
-			gsub(/^`|`$/, "");\
-			\
-			if(expcmd==1){\
-				if($0 !~ /^\s*$/)\
-					print $0;\
-				} else print $0;\
-			\
-			if($1 ~ /#/) expcmd=1;\
-			else expcmd=0;\
-			}' "$TMPDIR/tldr-cv/$tldr_page.md" >> "$PAGEFILE"
+		sed 's/{{|}}//g; s/^[->]/#/g; s/^`\|`$//g;' "$TMPDIR/tldr-cv/$tldr_page.md" >> "$PAGEFILE"
 	done
 
 	#cheat
@@ -87,21 +75,12 @@ shift $((OPTIND-1))
 : ${1:?Needs Args}
 
 awk "
-	\$1 ~ /^\[T\]/ {\
-		if(\$0 ~ /$GETFROM\\/$1:$/) j = 1;\
-		else j = 0;\
-	}\
-	j != 0 {\
-	if(\$0 ~ /^\[T\]/) {\
-		gsub(/^\[T\]/, \"$ESC_TL\");
-		gsub(/$/, \"$ESC_R\");
-	}\
-	if(\$1 ~ /^#/) {\
+  /^\[T\]/ { j = /$GETFROM\\/$1:$/ }\
+	j && (\$1 ~ /^#/ || /^\[T\]/) {\
+		gsub(/^\[T\]/, \"$ESC_TL\")
 		gsub(/^#/, \"$ESC_CC#\")\
 		gsub(/$/, \"$ESC_R\")\
-	};\
-	print \$0\
-	}" "$PAGEFILE" | $PGER
+	} j" "$PAGEFILE" | tr -d '\r' | $PGER
 
 [ "$(stat -c '%Y' "$PAGEFILE" )" -lt "$(date -d '1 week ago' '+%s')" ] && \
   printf "It has been over 1 week since you updated your pages, \nrun '%s -u' to update them\n" "$(basename "$0")"
